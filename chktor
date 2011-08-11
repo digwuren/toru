@@ -403,7 +403,6 @@ puts "Full length: #{torrent.length}"
 raise "Content directory #{dirname.inspect} missing" unless File::directory? dirname
 
 cursor = Multifile_Cursor::new file_array
-cursor.initial_skip = 0
 (0 ... torrent.piece_count).each do |piece_index|
     expected_piece_hash, = torrent.pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
     piece_content = ''
