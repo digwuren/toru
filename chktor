@@ -7,8 +7,6 @@ require 'digest/sha1'
 # TODO:
 # * the torrent-supplied base file or directory name ought to be overridable
 #   via command line
-# * the criterion for checking for extra files ought to be the input torrent
-#   specifying a whole directory rather than the checking directory being '.'
 
 IDENTIFICATION = 'chktor 0.1'
 USAGE = <<"EOF"
@@ -465,7 +463,7 @@ cursor.initial_skip = 0
 end
 
 # Check for any extra files
-unless dirname == '.' then
+if torrent.multifile? then
     torrent_entry_filename_list = Set::new(file_array.map{|e| File::join(*e['path'])})
     each_nondir_descendant '.', dirname do |filename|
         unless torrent_entry_filename_list.include? filename then
