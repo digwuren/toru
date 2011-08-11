@@ -138,10 +138,35 @@ class Torrent
     # the parsed torrent data structure; frozen
     attr_reader :data
 
+    # the info dictionary
+    attr_reader :info
+
+    # the piece data; a string
+    attr_reader :pieces
+   
+    # piece length; an integer
+    attr_reader :piece_length
+
     def initialize bencoded_data
         super()
         @data = bdecode bencoded_data
         @data.deep_freeze
+
+        # validate and extract some data
+        @info = @data['info']
+        unless @info.is_a? Hash then
+            raise Invalid::new(".info is not a dictionary")
+        end
+
+        @pieces = @info['pieces']
+        unless @pieces.is_a? String then
+            raise Invalid::new(".info.pieces is not a string")
+        end
+
+        @piece_length = @info['piece length']
+        unless @piece_length.is_a? Integer then
+            raise Invalid::new(".info.'piece length' is not an integer")
+        end
         return
     end
 
@@ -277,9 +302,6 @@ end
 
 errors_detected = false
 
-piece_data = torrent.data['info']['pieces']
-raise 'Type mismatch' unless piece_data.is_a? String
-
 piece_length = torrent.data['info']['piece length']
 raise 'Type mismatch' unless piece_length.is_a? Integer
 
@@ -290,7 +312,7 @@ unless torrent.data['info']['files'] then
     full_length = torrent.data['info']['length']
     raise 'Type mismatch' unless full_length.is_a? Integer
     expected_piece_count = (full_length + piece_length - 1) / piece_length
-    raise 'Piece count mismatch' unless piece_data.length == (expected_piece_count * 20)
+    raise 'Piece count mismatch' unless torrent.pieces.length == (expected_piece_count * 20)
 
     if torrent.data['info']['md5sum'] then
         $stderr.puts "warning: ignoring MD5 checksum"
@@ -317,14 +339,14 @@ end
 puts "Full length: #{full_length}"
 
 expected_piece_count = (full_length + piece_length - 1) / piece_length
-raise 'Piece count mismatch' unless piece_data.length == (expected_piece_count * 20)
+raise 'Piece count mismatch' unless torrent.pieces.length == (expected_piece_count * 20)
 
 raise "Content directory #{dirname.inspect} missing" unless File::directory? dirname
 
 cursor = Multifile_Cursor::new file_array
 cursor.initial_skip = 0
 (0 ... expected_piece_count).each do |piece_index|
-    expected_piece_hash, = piece_data[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
+    expected_piece_hash, = torrent.pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
     piece_content = ''
     acquisition_failed = false
     fragments = cursor.step piece_length
