@@ -4,6 +4,21 @@ require 'getoptlong'
 require 'set'
 require 'digest/sha1'
 
+IDENTIFICATION = 'chktor 0.1'
+USAGE = <<"EOF"
+chktor -- check whether a BitTorrent file matches a file or directory
+
+usage: chktor [-q] [-xDIR] filename.torrent
+
+ -q, --quiet        check quietly
+ -x, --extract=DIR  extract valid pieces into the given directory as
+                    separate files (named by piece number)
+
+ --help             show this usage
+ --version          show version data
+
+EOF
+
 #### Bdecoding
 
 # Parse a bencoded string and return the object represented by it.
@@ -141,14 +156,22 @@ $0 = 'chktor' # set our name for GetoptLong's error reporting
 begin
     GetoptLong::new(
         ['--quiet', '-q', GetoptLong::NO_ARGUMENT],
-        ['--extract-valid-pieces', '-x', GetoptLong::REQUIRED_ARGUMENT]
+        ['--extract-valid-pieces', '-x', GetoptLong::REQUIRED_ARGUMENT],
+        ['--help', '-h', GetoptLong::NO_ARGUMENT],
+        ['--version', '-V', GetoptLong::NO_ARGUMENT]
     ).each do |opt, arg|
         case opt
         when '--quiet' then
             $quiet = true
-        when '--extract-valid-pieces' then
+        when '--extract' then
             raise "chktor: #{arg}: not a directory" unless File::directory? arg
             $extract_valid_pieces = arg
+        when '--help' then
+            puts USAGE
+            exit 0
+        when '--version' then
+            puts IDENTIFICATION
+            exit 0
         end
     end
 rescue GetoptLong::InvalidOption, GetoptLong::MissingArgument
