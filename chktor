@@ -300,17 +300,18 @@ class Multifile_Cursor
         bytes_left = piece_length
         while bytes_left > 0 and !eof? do
             filename = current_file_name
+            filesize = current_file_length
             start_offset = @initial_skip
             if start_offset + bytes_left > current_file_length then
                 end_offset = current_file_length
                 bytes_left -= current_file_length - start_offset
-                fragments.push [current_file_name, start_offset ... end_offset, current_file_length]
+                fragments.push [filename, start_offset ... end_offset, filesize]
                 # advance to next file
                 @current_file_index += 1
                 @initial_skip = 0
             else
                 end_offset = start_offset + bytes_left
-                fragments.push [current_file_name, start_offset ... end_offset, current_file_length]
+                fragments.push [filename, start_offset ... end_offset, filesize]
                 @initial_skip += bytes_left
                 bytes_left = 0
             end
