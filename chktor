@@ -4,6 +4,12 @@ require 'getoptlong'
 require 'set'
 require 'digest/sha1'
 
+# TODO:
+# * the torrent-supplied base file or directory name ought to be overridable
+#   via command line
+# * the criterion for checking for extra files ought to be the input torrent
+#   specifying a whole directory rather than the checking directory being '.'
+
 IDENTIFICATION = 'chktor 0.1'
 USAGE = <<"EOF"
 chktor -- check whether a BitTorrent file matches a file or directory
@@ -88,6 +94,20 @@ def bdecode_part source, offset
         raise "Unknown bdecode object marker #{source[offset].chr.inspect}"
 
     end
+end
+
+# Iterate over all descendants of a given directory that are not directories.
+def each_nondir_descendant dir, base_dir = '.', &thunk
+    Dir::entries(File::join(base_dir, dir)).each do |entry|
+        next if ['.', '..'].include? entry
+        qentry = dir == '.' ? entry : File::join(dir, entry)
+        if File::directory? File::join(base_dir, qentry) then
+            each_nondir_descendant qentry, base_dir, &thunk
+        else
+            yield qentry
+        end
+    end
+    return
 end
 
 # Cursor for traversing over the file list piecewise
@@ -198,19 +218,6 @@ raise 'Type mismatch' unless piece_data.is_a? String
 piece_length = torrent_data['info']['piece length']
 raise 'Type mismatch' unless piece_length.is_a? Integer
 
-def each_nondir_descendant dir, base_dir = '.', &thunk
-    Dir::entries(File::join(base_dir, dir)).each do |entry|
-        next if ['.', '..'].include? entry
-        qentry = dir == '.' ? entry : File::join(dir, entry)
-        if File::directory? File::join(base_dir, qentry) then
-            each_nondir_descendant qentry, base_dir, &thunk
-        else
-            yield qentry
-        end
-    end
-    return
-end
-
 unless torrent_data['info']['files'] then
     # single file
     filename = torrent_data['info']['name']
@@ -306,6 +313,7 @@ cursor.initial_skip = 0
     end
 end
 
+# Check for any extra files
 unless dirname == '.' then
     torrent_entry_filename_list = Set::new(file_array.map{|e| File::join(*e['path'])})
     each_nondir_descendant '.', dirname do |filename|
