@@ -358,15 +358,13 @@ class Torrent
                 filename = File::join(*current_file_entry['path'])
                 filesize = current_file_entry['length']
                 if start_offset + bytes_left > filesize then
-                    end_offset = filesize
                     bytes_left -= filesize - start_offset
-                    fragments.push [filename, start_offset ... end_offset, filesize]
+                    fragments.push [filename, start_offset ... filesize, filesize]
                     # advance to next file
                     fileno += 1
                     start_offset = 0
                 else
-                    end_offset = start_offset + bytes_left
-                    fragments.push [filename, start_offset ... end_offset, filesize]
+                    fragments.push [filename, start_offset ... start_offset + bytes_left, filesize]
                     start_offset += bytes_left
                     bytes_left = 0
                     break if start_offset < filesize
