@@ -271,6 +271,8 @@ end
 
 # Cursor for traversing over the file list piecewise
 class Multifile_Cursor
+    attr_reader :file_entries
+    attr_accessor :current_file_index
     attr_accessor :initial_skip
 
     # file_entries comes straight from a multifile torrent file
