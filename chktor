@@ -8,9 +8,11 @@ IDENTIFICATION = 'chktor 0.1'
 USAGE = <<"EOF"
 chktor -- check whether a BitTorrent file matches a file or directory
 
-usage: chktor [-q] [-xDIR] filename.torrent [checkee]
+usage: chktor [-qd] [-xDIR] filename.torrent [checkee]
 
  -q, --quiet        check quietly
+ -d, --torrent-dir  resolve checkee and implicit filename(s) starting from the
+                    torrent file's directory rather than the current directory
  -x, --extract=DIR  extract valid pieces into the given directory as
                     separate files (named by piece number)
 
@@ -272,6 +274,7 @@ end
 #### Parse command line
 
 $quiet = false
+$torrent_dir = false
 $extract_valid_pieces = nil # if true, holds the directory name
 
 $0 = 'chktor' # set our name for GetoptLong's error reporting
@@ -279,6 +282,7 @@ $0 = 'chktor' # set our name for GetoptLong's error reporting
 begin
     GetoptLong::new(
         ['--quiet', '-q', GetoptLong::NO_ARGUMENT],
+        ['--torrent-dir', '-d', GetoptLong::NO_ARGUMENT],
         ['--extract-valid-pieces', '-x', GetoptLong::REQUIRED_ARGUMENT],
         ['--help', '-h', GetoptLong::NO_ARGUMENT],
         ['--version', '-V', GetoptLong::NO_ARGUMENT]
@@ -286,6 +290,8 @@ begin
         case opt
         when '--quiet' then
             $quiet = true
+        when '--torrent-dir' then
+            $torrent_dir = true
         when '--extract' then
             raise "chktor: #{arg}: not a directory" unless File::directory? arg
             $extract_valid_pieces = arg
@@ -316,8 +322,18 @@ torrent = nil # declare
 begin
     torrent = Torrent::new IO::read($torrent_filename)
 rescue Torrent::Invalid
-    $stderr.puts "chktor: #$torrent_filename: #{$!.message}"
+    $stderr.puts "chktor: #$torrent_filename: #$!"
     exit 1
+end
+
+if $torrent_dir then
+    workdir = File::dirname $torrent_filename
+    begin
+        Dir::chdir workdir
+    rescue
+        $stderr.puts "chktor: #{workdir}: chdir failed: #$!"
+        exit 1
+    end
 end
 
 $checkee ||= torrent.name
@@ -399,7 +415,7 @@ torrent.each_piece_fragments do |fragments, piece_index|
         begin
             port = open(realfilename, 'rb')
         rescue
-            $stderr.puts "chktor: #{realfilename}: open failed: #{$!.message}"
+            $stderr.puts "chktor: #{realfilename}: open failed: #$!"
             acquisition_failed = true
             errors_detected = true
             # we'll continue anyway so as to be able to determine the presence of following files in this fragment
