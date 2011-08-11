@@ -1,5 +1,6 @@
 #! /usr/bin/ruby
 
+require 'getoptlong'
 require 'set'
 require 'digest/sha1'
 
@@ -134,30 +135,37 @@ end
 
 $quiet = false
 $extract_valid_pieces = nil # if true, holds the directory name
-loop do
-    if ARGV[0] == '-q' then
-        $quiet = true
-        ARGV.shift
-    elsif ARGV[0] =~ /^-x/ then
-        $extract_valid_pieces = $'
-        ARGV.shift
-        if $extract_valid_pieces == '' then
-            $extract_valid_pieces = ARGV.shift
-            raise 'misuse of -x' if $extract_valid_pieces.nil? or $extract_valid_pieces == ''
+
+$0 = 'chktor' # set our name for GetoptLong's error reporting
+
+begin
+    GetoptLong::new(
+        ['--quiet', '-q', GetoptLong::NO_ARGUMENT],
+        ['--extract-valid-pieces', '-x', GetoptLong::REQUIRED_ARGUMENT]
+    ).each do |opt, arg|
+        case opt
+        when '--quiet' then
+            $quiet = true
+        when '--extract-valid-pieces' then
+            raise "chktor: #{arg}: not a directory" unless File::directory? arg
+            $extract_valid_pieces = arg
         end
-    else
-        break
     end
+rescue GetoptLong::InvalidOption, GetoptLong::MissingArgument
+    # the error has already been reported by GetoptLong#each
+    exit 1
 end
 
-raise 'Argument count mismatch' unless ARGV.length == 1
-raise "No directory #{$extract_valid_pieces.inspect}" if $extract_valid_pieces and !File::directory? $extract_valid_pieces
+unless ARGV.length == 1 then
+    $stderr.puts "chktor: argument count mismatch"
+    exit 1
+end
 
-torrent_filename = ARGV[0]
+$torrent_filename = ARGV[0]
 
 #### The work begins here
 
-torrent_data = bdecode IO::read(torrent_filename)
+torrent_data = bdecode IO::read($torrent_filename)
 
 errors_detected = false
 
