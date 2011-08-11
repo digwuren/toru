@@ -346,37 +346,36 @@ class Torrent
             file_list = @files
         end
 
-        current_file_index = 0
-        initial_skip = 0
+        fileno = 0
+        skip = 0 # next piece's start offset in the current file
         (0 ... @piece_count).each do |piece_index|
             fragments = [] # [[filename, begin_offset ... end_offset, file_expected_size], ...].
             bytes_left = @piece_length
-            while current_file_index < file_list.length do
+            while fileno < file_list.length do
                 raise 'Assertion failed' unless bytes_left >= 0
                     # bytes_left being zero with files still remaining is the
                     # degenerate case of trailing empty file(s)
-                current_file_entry = file_list[current_file_index]
+                current_file_entry = file_list[fileno]
                 filename = File::join(*current_file_entry['path'])
                 filesize = current_file_entry['length']
-                start_offset = initial_skip
+                start_offset = skip
                 if start_offset + bytes_left > filesize then
                     end_offset = filesize
                     bytes_left -= filesize - start_offset
                     fragments.push [filename, start_offset ... end_offset, filesize]
                     # advance to next file
-                    current_file_index += 1
-                    initial_skip = 0
+                    fileno += 1
+                    skip = 0
                 else
                     end_offset = start_offset + bytes_left
                     fragments.push [filename, start_offset ... end_offset, filesize]
-                    initial_skip += bytes_left
+                    skip += bytes_left
                     bytes_left = 0
                 end
             end
-
             yield fragments, piece_index
         end
-        raise 'Assertion failed' unless cursor.current_file_index >= file_list.length
+        raise 'Assertion failed' unless fileno >= file_list.length
         return
     end
 end
