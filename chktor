@@ -239,6 +239,12 @@ class Torrent
         return !@files.nil?
     end
 
+    # Get hash of the specified piece as a hex string.
+    def piece_hash piece_index
+        hash, = @pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
+        return hash
+    end
+
     class Invalid < Exception
         def initialize message
             super message
@@ -385,7 +391,6 @@ raise "Content directory #{dirname.inspect} missing" unless File::directory? dir
 cursor = Multifile_Cursor::new file_array
 valid_pieces = 0
 (0 ... torrent.piece_count).each do |piece_index|
-    expected_piece_hash, = torrent.pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
     piece_content = ''
     acquisition_failed = false
     fragments = cursor.step torrent.piece_length
@@ -421,8 +426,7 @@ valid_pieces = 0
         piece_content << subpiece
     end
     unless acquisition_failed then
-        actual_piece_hash = Digest::SHA1.hexdigest piece_content
-        if actual_piece_hash == expected_piece_hash then
+        if Digest::SHA1.hexdigest(piece_content) == torrent.piece_hash(piece_index) then
             valid_pieces += 1
             print " ok" unless $quiet
             if $extract_valid_pieces then
