@@ -351,13 +351,12 @@ class Torrent
         (0 ... @piece_count).each do |piece_index|
             fragments = [] # [[filename, begin_offset ... end_offset, file_expected_size], ...].
             bytes_left = @piece_length
-            while fileno < file_list.length do
-                raise 'Assertion failed' unless bytes_left >= 0
-                    # bytes_left being zero with files still remaining is the
-                    # degenerate case of trailing empty file(s)
+            loop do
+                break if fileno >= file_list.length
                 current_file_entry = file_list[fileno]
                 filename = File::join(*current_file_entry['path'])
                 filesize = current_file_entry['length']
+                break if bytes_left.zero? and skip != filesize
                 start_offset = skip
                 if start_offset + bytes_left > filesize then
                     end_offset = filesize
@@ -444,7 +443,7 @@ end
 
 # Check for any extra files
 if torrent.multifile? then
-    torrent_entry_filename_list = Set::new(file_array.map{|e| File::join(*e['path'])})
+    torrent_entry_filename_list = Set::new(torrent.files.map{|e| File::join(*e['path'])})
     each_nondir_descendant '.', dirname do |filename|
         unless torrent_entry_filename_list.include? filename then
             puts "Extra file: #{filename}"
