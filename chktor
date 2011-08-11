@@ -167,7 +167,17 @@ class Torrent
         unless @piece_length.is_a? Integer then
             raise Invalid::new(".info.'piece length' is not an integer")
         end
+
+        @files = @info['files']
+        unless @files.nil? or @files.is_a? Hash then
+            raise Invalid::new(".info.files exists but is not a dictionary")
+        end
+
         return
+    end
+
+    def multifile?
+        return !@files.nil?
     end
 
     class Invalid < Exception
@@ -302,7 +312,7 @@ end
 
 errors_detected = false
 
-unless torrent.data['info']['files'] then
+unless torrent.multifile? then
     # single file
     filename = torrent.data['info']['name']
     raise 'Type mismatch' unless filename.is_a? String
