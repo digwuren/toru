@@ -418,7 +418,8 @@ cursor.initial_skip = 0
         port = nil
         begin
             port = open(File::join(dirname, filename), 'rb')
-        rescue Errno::ENOENT
+        rescue Errno => e
+            $stderr.puts "chktor: #{File::join dirname, filename}: open failed: #{e.message}"
             acquisition_failed = true
             errors_detected = true
             # we'll continue anyway so as to be able to determine the presence of following files in this fragment
