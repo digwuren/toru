@@ -234,6 +234,17 @@ class Torrent
         return !@files.nil?
     end
 
+    # For single-file torrents, '.'; for multi-file torrents, the .info.name
+    # value from the torrent.  Note that '.' is not a valid directory name for
+    # multi-file torrents.
+    def dirname
+        unless torrent.multifile? then
+            return '.'
+        else
+            return @name
+        end
+    end
+
     class Invalid < Exception
         def initialize message
             super message
@@ -379,15 +390,15 @@ unless torrent.multifile? then
     end
 
     # synthesise a file array of the single file
-    dirname = '.'
     # note that the filename will be sanity-checked further below
     file_array = [{'path' => [filename], 'length' => torrent.length}]
 else
     # multiple files
-    dirname = torrent.name
     raise 'Invalid base directory name' if dirname.include? ?/ or ['.', '..'].include? dirname
     file_array = torrent.files
 end
+
+dirname = torrent.dirname
 
 puts "Full length: #{torrent.length}"
 
