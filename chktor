@@ -398,7 +398,7 @@ torrent.each_piece_fragments do |fragments, piece_index|
         port = nil
         begin
             port = open(realfilename, 'rb')
-        rescue Errno::ENOENT, Errno::EACCES
+        rescue
             $stderr.puts "chktor: #{realfilename}: open failed: #{$!.message}"
             acquisition_failed = true
             errors_detected = true
