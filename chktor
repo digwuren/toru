@@ -96,6 +96,58 @@ def bdecode_part source, offset
     end
 end
 
+#### Deep freeze
+
+class String
+    def deep_freeze
+        freeze
+        return self
+    end
+end
+
+class Array
+    def deep_freeze
+        each do |item|
+            item.deep_freeze
+        end
+        freeze
+        return self
+    end
+end
+
+class Integer
+    def deep_freeze
+        return self
+    end
+end
+
+class Hash
+    def deep_freeze
+        each_pair do |key, value|
+            key.deep_freeze
+            value.deep_freeze
+        end
+        freeze
+        return self
+    end
+end
+
+#### Encapsulated torrent object
+
+class Torrent
+    # the parsed torrent data structure; frozen
+    attr_reader :data
+
+    def initialize bencoded_data
+        super()
+        @data = bdecode bencoded_data
+        @data.deep_freeze
+        return
+    end
+end
+
+#### File system traversal
+
 # Iterate over all descendants of a given directory that are not directories.
 def each_nondir_descendant dir, base_dir = '.', &thunk
     Dir::entries(File::join(base_dir, dir)).each do |entry|
@@ -208,26 +260,27 @@ $torrent_filename = ARGV[0]
 
 #### The work begins here
 
-torrent_data = bdecode IO::read($torrent_filename)
+torrent = Torrent::new IO::read($torrent_filename)
+torrent.data = torrent.data
 
 errors_detected = false
 
-piece_data = torrent_data['info']['pieces']
+piece_data = torrent.data['info']['pieces']
 raise 'Type mismatch' unless piece_data.is_a? String
 
-piece_length = torrent_data['info']['piece length']
+piece_length = torrent.data['info']['piece length']
 raise 'Type mismatch' unless piece_length.is_a? Integer
 
-unless torrent_data['info']['files'] then
+unless torrent.data['info']['files'] then
     # single file
-    filename = torrent_data['info']['name']
+    filename = torrent.data['info']['name']
     raise 'Type mismatch' unless filename.is_a? String
-    full_length = torrent_data['info']['length']
+    full_length = torrent.data['info']['length']
     raise 'Type mismatch' unless full_length.is_a? Integer
     expected_piece_count = (full_length + piece_length - 1) / piece_length
     raise 'Piece count mismatch' unless piece_data.length == (expected_piece_count * 20)
 
-    if torrent_data['info']['md5sum'] then
+    if torrent.data['info']['md5sum'] then
         $stderr.puts "warning: ignoring MD5 checksum"
     end
 
@@ -237,9 +290,9 @@ unless torrent_data['info']['files'] then
     file_array = [{'path' => [filename], 'length' => full_length}]
 else
     # multiple files
-    dirname = torrent_data['info']['name']
+    dirname = torrent.data['info']['name']
     raise 'Invalid base directory name' if dirname.include? ?/ or ['.', '..'].include? dirname
-    file_array = torrent_data['info']['files']
+    file_array = torrent.data['info']['files']
 end
 
 raise 'Type mismatch' unless file_array.is_a? Array
