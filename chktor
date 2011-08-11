@@ -432,6 +432,7 @@ cursor.initial_skip = 0
         port.seek range.begin
         subpiece = port.read(range.end - range.begin)
         unless subpiece.length == range.end - range.begin then
+            $stderr.puts "chktor: #{File::join dirname, filename}: short read"
             acquisition_failed = true
             errors_detected = true
         end
