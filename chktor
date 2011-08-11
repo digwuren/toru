@@ -281,26 +281,15 @@ class Multifile_Cursor
         return @current_file_index >= @file_entries.length
     end
 
-    # FIXME: shouldn't this be inlined?
-    def current_file_name
-        raise 'Assertion failed' if eof?
-        return File::join(*@file_entries[@current_file_index]['path'])
-    end
-
-    # FIXME: shouldn't this be inlined?
-    def current_file_length
-        raise 'Assertion failed' if eof?
-        return @file_entries[@current_file_index]['length']
-    end
-
     # Advance the cursor by given piece_length.
     # Return [[filename, begin_offset ... end_offset, file_expected_size], ...].
     def step piece_length
         fragments = []
         bytes_left = piece_length
         while bytes_left > 0 and !eof? do
-            filename = current_file_name
-            filesize = current_file_length
+            current_file_entry = @file_entries[@current_file_index]
+            filename = File::join(*current_file_entry['path'])
+            filesize = current_file_entry['length']
             start_offset = @initial_skip
             if start_offset + bytes_left > filesize then
                 end_offset = filesize
