@@ -329,7 +329,7 @@ if torrent.info['md5sum'] then
 end
 
 if torrent.multifile? then
-    dirname = $checkee || torrent.name
+    dirname = $checkee
     unless File::directory? dirname then
         $stderr.puts "chktor: #{dirname}: no such directory"
         exit 1
@@ -391,9 +391,9 @@ torrent.each_piece_fragments do |fragments, piece_index|
     $stdout.flush
     fragments.each do |filename, range, expected_file_size|
         if torrent.multifile? then
-            realfilename = File::join($checkee || torrent.name, filename)
+            realfilename = File::join($checkee, filename)
         else
-            realfilename = $checkee || torrent.name
+            realfilename = $checkee
         end
         port = nil
         begin
