@@ -236,11 +236,7 @@ class Torrent
     # value from the torrent.  Note that '.' is not a valid directory name for
     # multi-file torrents.
     def dirname
-        unless multifile? then
-            return '.'
-        else
-            return @name
-        end
+        return multifile? ? '.' : @name
     end
 
     class Invalid < Exception
