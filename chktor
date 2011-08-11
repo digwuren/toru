@@ -314,14 +314,14 @@ errors_detected = false
 
 unless torrent.multifile? then
     # single file
-    filename = torrent.data['info']['name']
+    filename = torrent.info['name']
     raise 'Type mismatch' unless filename.is_a? String
-    full_length = torrent.data['info']['length']
+    full_length = torrent.info['length']
     raise 'Type mismatch' unless full_length.is_a? Integer
     expected_piece_count = (full_length + torrent.piece_length - 1) / torrent.piece_length
     raise 'Piece count mismatch' unless torrent.pieces.length == (expected_piece_count * 20)
 
-    if torrent.data['info']['md5sum'] then
+    if torrent.info['md5sum'] then
         $stderr.puts "warning: ignoring MD5 checksum"
     end
 
@@ -331,9 +331,9 @@ unless torrent.multifile? then
     file_array = [{'path' => [filename], 'length' => full_length}]
 else
     # multiple files
-    dirname = torrent.data['info']['name']
+    dirname = torrent.info['name']
     raise 'Invalid base directory name' if dirname.include? ?/ or ['.', '..'].include? dirname
-    file_array = torrent.data['info']['files']
+    file_array = torrent.info['files']
 end
 
 raise 'Type mismatch' unless file_array.is_a? Array
