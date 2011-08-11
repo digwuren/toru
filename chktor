@@ -347,29 +347,29 @@ class Torrent
         end
 
         fileno = 0
-        skip = 0 # next piece's start offset in the current file
+        start_offset = 0 # next piece's start offset in the current file
         (0 ... @piece_count).each do |piece_index|
             fragments = [] # [[filename, begin_offset ... end_offset, file_expected_size], ...].
             bytes_left = @piece_length
-            loop do
-                break if fileno >= file_list.length
+            while fileno < file_list.length do
                 current_file_entry = file_list[fileno]
                 filename = File::join(*current_file_entry['path'])
                 filesize = current_file_entry['length']
-                break if bytes_left.zero? and skip != filesize
-                start_offset = skip
                 if start_offset + bytes_left > filesize then
                     end_offset = filesize
                     bytes_left -= filesize - start_offset
                     fragments.push [filename, start_offset ... end_offset, filesize]
                     # advance to next file
                     fileno += 1
-                    skip = 0
+                    start_offset = 0
                 else
                     end_offset = start_offset + bytes_left
                     fragments.push [filename, start_offset ... end_offset, filesize]
-                    skip += bytes_left
+                    start_offset += bytes_left
                     bytes_left = 0
+                    break if start_offset < filesize
+                        # if start_offset == filesize, we may be able to fit a
+                        # few empty files into this piece and so shouldn't break.
                 end
             end
             yield fragments, piece_index
