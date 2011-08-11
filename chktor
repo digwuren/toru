@@ -386,7 +386,9 @@ else
     dirname = $checkee
 end
 
-raise "Content directory #{dirname.inspect} missing" unless File::directory? dirname
+unless File::directory? dirname then
+    raise "Content directory #{dirname.inspect} missing"
+end
 
 cursor = Multifile_Cursor::new file_array
 valid_pieces = 0
