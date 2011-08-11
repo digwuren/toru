@@ -374,6 +374,13 @@ if torrent.info['md5sum'] then
     $stderr.puts "chktor: warning: ignoring .info.md5sum"
 end
 
+if torrent.multifile? then
+    unless File::directory?($checkee || torrent.name) then
+        $stderr.puts "chktor: #{dirname.inspect}: no such directory"
+        exit 1
+    end
+end
+
 class Torrent
     def each_piece_file_fragments checkee = nil
         checkee ||= @name
@@ -403,10 +410,6 @@ end
 valid_pieces = 0
 
 torrent.each_piece_file_fragments $checkee do |dirname, fragments, piece_index|
-    unless File::directory? dirname then
-        $stderr.puts "chktor: #{dirname.inspect}: no such directory"
-        exit 1
-    end
     piece_content = ''
     acquisition_failed = false
     display_fragments = fragments.map do |filename, range, expected_file_size|
