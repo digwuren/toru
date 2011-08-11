@@ -284,17 +284,15 @@ class Multifile_Cursor
         return
     end
 
-    # Has the cursor reached end of the file list?
-    def eof?
-        return @current_file_index >= @file_entries.length
-    end
-
     # Advance the cursor by given piece_length.
     # Return [[filename, begin_offset ... end_offset, file_expected_size], ...].
     def step piece_length
         fragments = []
         bytes_left = piece_length
-        while bytes_left > 0 and !eof? do
+        while @current_file_index < @file_entries.length do
+            raise 'Assertion failed' unless bytes_left >= 0
+                # bytes_left being zero with files still remaining is the
+                # degenerate case of trailing empty file(s)
             current_file_entry = @file_entries[@current_file_index]
             filename = File::join(*current_file_entry['path'])
             filesize = current_file_entry['length']
@@ -398,7 +396,7 @@ class Torrent
             fragments = cursor.step @piece_length
             yield fragments, piece_index
         end
-        raise 'Assertion failed' unless cursor.eof?
+        raise 'Assertion failed' unless cursor.current_file_index >= @cursor.file_entries.length
         return
     end
 end
