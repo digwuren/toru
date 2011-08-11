@@ -337,7 +337,7 @@ if torrent.multifile? then
 end
 
 class Torrent
-    # iterate over piece and yield [fragment, ...], piece_index for every piece.
+    # Iterate over pieces and yield [fragment, ...], piece_index for every piece.
     # Each fragment is represented by a list of [filename, begin_offset ... end_offset, expected_filesize] tuples.
     def each_piece_fragments
         unless multifile? then # single file
