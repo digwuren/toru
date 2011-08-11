@@ -154,6 +154,9 @@ class Torrent
     # total length of data in this torrent; a non-negative integer
     attr_reader :length
 
+    # number of pieces; a non-negative integer
+    attr_reader :piece_count
+
     def initialize bencoded_data
         super()
         @data = bdecode bencoded_data
@@ -173,6 +176,9 @@ class Torrent
         @piece_length = @info['piece length']
         unless @piece_length.is_a? Integer then
             raise Invalid::new(".info.'piece length' is not an integer")
+        end
+        unless @piece_length > 0 then
+            raise Invalid::new(".info.'piece length' is not a positive integer")
         end
 
         @files = @info['files']
@@ -207,6 +213,11 @@ class Torrent
         end
         unless valid_filename_component? @name then
             raise Invalid::new(".info.name is not a valid unqualified single-level filename")
+        end
+
+        @piece_count = (@length + @piece_length - 1) / @piece_length # integer division
+        unless @pieces.length == @piece_count * 20 then
+            raise Invalid::new("total data size (#@piece_count pieces of #@piece_length bytes each) does not match the length of .info.pieces (#{@pieces.length})")
         end
 
         return
@@ -376,8 +387,6 @@ unless torrent.multifile? then
     filename = torrent.name
     raise 'Type mismatch' unless filename.is_a? String
     raise 'Type mismatch' unless torrent.length.is_a? Integer
-    expected_piece_count = (torrent.length + torrent.piece_length - 1) / torrent.piece_length
-    raise 'Piece count mismatch' unless torrent.pieces.length == (expected_piece_count * 20)
 
     if torrent.info['md5sum'] then
         $stderr.puts "warning: ignoring MD5 checksum"
@@ -396,14 +405,11 @@ dirname = torrent.dirname
 
 puts "Full length: #{torrent.length}"
 
-expected_piece_count = (torrent.length + torrent.piece_length - 1) / torrent.piece_length
-raise 'Piece count mismatch' unless torrent.pieces.length == (expected_piece_count * 20)
-
 raise "Content directory #{dirname.inspect} missing" unless File::directory? dirname
 
 cursor = Multifile_Cursor::new file_array
 cursor.initial_skip = 0
-(0 ... expected_piece_count).each do |piece_index|
+(0 ... torrent.piece_count).each do |piece_index|
     expected_piece_hash, = torrent.pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
     piece_content = ''
     acquisition_failed = false
@@ -411,7 +417,7 @@ cursor.initial_skip = 0
     display_fragments = fragments.map do |filename, range, expected_file_size|
         [range.begin != 0 ? "... " : "", filename, range.end != expected_file_size ? " ..." : ""].join ''
     end
-    print "##{piece_index}/#{expected_piece_count} (#{display_fragments.join ', '}) " unless $quiet
+    print "##{piece_index}/#{torrent.piece_count} (#{display_fragments.join ', '}) " unless $quiet
     $stdout.flush
     fragments.each do |filename, range, expected_file_size|
         port = nil
