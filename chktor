@@ -4,15 +4,11 @@ require 'getoptlong'
 require 'set'
 require 'digest/sha1'
 
-# TODO:
-# * the torrent-supplied base file or directory name ought to be overridable
-#   via command line
-
 IDENTIFICATION = 'chktor 0.1'
 USAGE = <<"EOF"
 chktor -- check whether a BitTorrent file matches a file or directory
 
-usage: chktor [-q] [-xDIR] filename.torrent
+usage: chktor [-q] [-xDIR] filename.torrent [checkee]
 
  -q, --quiet        check quietly
  -x, --extract=DIR  extract valid pieces into the given directory as
@@ -243,13 +239,6 @@ class Torrent
         return !@files.nil?
     end
 
-    # For single-file torrents, '.'; for multi-file torrents, the .info.name
-    # value from the torrent.  Note that '.' is not a valid directory name for
-    # multi-file torrents.
-    def dirname
-        return multifile? ? '.' : @name
-    end
-
     class Invalid < Exception
         def initialize message
             super message
@@ -363,12 +352,13 @@ rescue GetoptLong::InvalidOption, GetoptLong::MissingArgument
     exit 1
 end
 
-unless ARGV.length == 1 then
+unless (1 .. 2).include? ARGV.length then
     $stderr.puts "chktor: argument count mismatch"
     exit 1
 end
 
 $torrent_filename = ARGV[0]
+$checkee = ARGV[1]
 
 #### The work begins here
 
@@ -380,7 +370,9 @@ rescue Torrent::Invalid => e
     exit 1
 end
 
-errors_detected = false
+$checkee ||= torrent.name
+
+errors_detected = false # so far, no errors or we would have exited already
 
 if torrent.info['md5sum'] then
     $stderr.puts "chktor: warning: ignoring .info.md5sum"
@@ -389,16 +381,14 @@ end
 unless torrent.multifile? then
     # single file
     # synthesise a file array of the single file
-    file_array = [{'path' => [torrent.name], 'length' => torrent.length}]
+    file_array = [{'path' => [File::basename($checkee)], 'length' => torrent.length}]
+    dirname = File::dirname $checkee
     file_array.deep_freeze
 else
     # multiple files
     file_array = torrent.files
+    dirname = $checkee
 end
-
-dirname = torrent.dirname
-
-puts "Full length: #{torrent.length}"
 
 raise "Content directory #{dirname.inspect} missing" unless File::directory? dirname
 
@@ -417,8 +407,8 @@ cursor = Multifile_Cursor::new file_array
         port = nil
         begin
             port = open(File::join(dirname, filename), 'rb')
-        rescue Errno => e
-            $stderr.puts "chktor: #{File::join dirname, filename}: open failed: #{e.message}"
+        rescue Errno::ENOENT, Errno::EACCES
+            $stderr.puts "chktor: #{File::join dirname, filename}: open failed: #{$!.message}"
             acquisition_failed = true
             errors_detected = true
             # we'll continue anyway so as to be able to determine the presence of following files in this fragment
