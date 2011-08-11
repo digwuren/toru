@@ -382,25 +382,19 @@ if torrent.multifile? then
 end
 
 class Torrent
-    def each_piece_file_fragments checkee = nil
-        checkee ||= @name
-
-        unless multifile? then
-            # single file
+    def each_piece_file_fragments
+        unless multifile? then # single file
             # synthesise a file array of the single file
-            file_array = [{'path' => [File::basename(checkee)], 'length' => @length}]
-            dirname = File::dirname checkee
+            file_array = [{'path' => [@name], 'length' => @length}]
             file_array.deep_freeze
-        else
-            # multiple files
+        else # multiple files
             file_array = @files
-            dirname = checkee
         end
 
         cursor = Multifile_Cursor::new file_array
         (0 ... @piece_count).each do |piece_index|
             fragments = cursor.step @piece_length
-            yield dirname, fragments, piece_index
+            yield fragments, piece_index
         end
         raise 'Assertion failed' unless cursor.eof?
         return
@@ -409,7 +403,7 @@ end
 
 valid_pieces = 0
 
-torrent.each_piece_file_fragments $checkee do |dirname, fragments, piece_index|
+torrent.each_piece_file_fragments do |fragments, piece_index|
     piece_content = ''
     acquisition_failed = false
     display_fragments = fragments.map do |filename, range, expected_file_size|
@@ -418,25 +412,30 @@ torrent.each_piece_file_fragments $checkee do |dirname, fragments, piece_index|
     print "##{piece_index}/#{torrent.piece_count} (#{display_fragments.join ', '}) " unless $quiet
     $stdout.flush
     fragments.each do |filename, range, expected_file_size|
+        if torrent.multifile? then
+            realfilename = File::join($checkee || torrent.name, filename)
+        else
+            realfilename = $checkee || torrent.name
+        end
         port = nil
         begin
-            port = open(File::join(dirname, filename), 'rb')
+            port = open(realfilename, 'rb')
         rescue Errno::ENOENT, Errno::EACCES
-            $stderr.puts "chktor: #{File::join dirname, filename}: open failed: #{$!.message}"
+            $stderr.puts "chktor: #{realfilename}: open failed: #{$!.message}"
             acquisition_failed = true
             errors_detected = true
             # we'll continue anyway so as to be able to determine the presence of following files in this fragment
             next
         end
         if port.stat.size != expected_file_size then
-            $stderr.puts "chktor: #{File::join dirname, filename}: size mismatch: expected #{expected_file_size}, actual #{port.stat.size}"
+            $stderr.puts "chktor: #{realfilename}: size mismatch: expected #{expected_file_size}, actual #{port.stat.size}"
             errors_detected = true
             # but we're not ceasing acquisition of this piece
         end
         port.seek range.begin
         subpiece = port.read(range.end - range.begin)
         unless subpiece.length == range.end - range.begin then
-            $stderr.puts "chktor: #{File::join dirname, filename}: short read"
+            $stderr.puts "chktor: #{realfilename}: short read"
             acquisition_failed = true
             errors_detected = true
         end
