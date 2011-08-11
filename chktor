@@ -144,6 +144,13 @@ class Torrent
         @data.deep_freeze
         return
     end
+
+    class Invalid < Exception
+        def initialize message
+            super message
+            return
+        end
+    end
 end
 
 #### File system traversal
@@ -260,8 +267,13 @@ $torrent_filename = ARGV[0]
 
 #### The work begins here
 
-torrent = Torrent::new IO::read($torrent_filename)
-torrent.data = torrent.data
+torrent = nil # declare
+begin
+    torrent = Torrent::new IO::read($torrent_filename)
+rescue Torrent::Invalid => e
+    $stderr.puts "chktor: #$torrent_filename: #{e.message}"
+    exit 1
+end
 
 errors_detected = false
 
