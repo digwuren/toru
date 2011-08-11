@@ -205,7 +205,7 @@ class Torrent
         unless @name.is_a? String then
             raise Invalid::new(".info.name is not a string")
         end
-        unless valid_filename_component? s then
+        unless valid_filename_component? @name then
             raise Invalid::new(".info.name is not a valid unqualified single-level filename")
         end
 
@@ -224,7 +224,7 @@ class Torrent
     private :validate_length
 
     def valid_filename_component? s
-        return s.is_a? String and !s.include?(?/) and !['.', '..'].include? s
+        return s.is_a?(String) && !s.include?(?/) && !['.', '..'].include?(s)
     end
     private :valid_filename_component?
 
@@ -236,7 +236,7 @@ class Torrent
     # value from the torrent.  Note that '.' is not a valid directory name for
     # multi-file torrents.
     def dirname
-        unless torrent.multifile? then
+        unless multifile? then
             return '.'
         else
             return @name
