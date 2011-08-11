@@ -365,8 +365,8 @@ $checkee = ARGV[1]
 torrent = nil # declare
 begin
     torrent = Torrent::new IO::read($torrent_filename)
-rescue Torrent::Invalid => e
-    $stderr.puts "chktor: #$torrent_filename: #{e.message}"
+rescue Torrent::Invalid
+    $stderr.puts "chktor: #$torrent_filename: #{$!.message}"
     exit 1
 end
 
@@ -393,6 +393,7 @@ end
 raise "Content directory #{dirname.inspect} missing" unless File::directory? dirname
 
 cursor = Multifile_Cursor::new file_array
+valid_pieces = 0
 (0 ... torrent.piece_count).each do |piece_index|
     expected_piece_hash, = torrent.pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
     piece_content = ''
@@ -432,6 +433,7 @@ cursor = Multifile_Cursor::new file_array
     unless acquisition_failed then
         actual_piece_hash = Digest::SHA1.hexdigest piece_content
         if actual_piece_hash == expected_piece_hash then
+            valid_pieces += 1
             print " ok" unless $quiet
             if $extract_valid_pieces then
                 open "#{File::join $extract_valid_pieces, piece_index.to_s}", 'wb' do |port|
@@ -461,7 +463,9 @@ if torrent.multifile? then
 end
 
 if errors_detected then
-    puts "Error(s) detected."
+    # Note that it is possible for errors to be present even when all pieces
+    # are valid if some of the files has trailing junk.
+    puts "Error(s) detected, only #{valid_pieces} out of #{torrent.piece_count} pieces are valid."
     exit 1
 else
     puts "Validation successful."
