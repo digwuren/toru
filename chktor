@@ -425,7 +425,7 @@ cursor.initial_skip = 0
             next
         end
         if port.stat.size != expected_file_size then
-            $stderr.puts "chktor: #{filename}: size mismatch: expected #{expected_file_size}, actual #{port.stat.size}"
+            $stderr.puts "chktor: #{File::join dirname, filename}: size mismatch: expected #{expected_file_size}, actual #{port.stat.size}"
             errors_detected = true
             # but we're not ceasing acquisition of this piece
         end
