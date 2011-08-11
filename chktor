@@ -302,9 +302,9 @@ class Multifile_Cursor
             filename = current_file_name
             filesize = current_file_length
             start_offset = @initial_skip
-            if start_offset + bytes_left > current_file_length then
-                end_offset = current_file_length
-                bytes_left -= current_file_length - start_offset
+            if start_offset + bytes_left > filesize then
+                end_offset = filesize
+                bytes_left -= filesize - start_offset
                 fragments.push [filename, start_offset ... end_offset, filesize]
                 # advance to next file
                 @current_file_index += 1
