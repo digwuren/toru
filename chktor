@@ -283,36 +283,6 @@ class Multifile_Cursor
         @initial_skip = 0
         return
     end
-
-    # Advance the cursor by given piece_length.
-    # Return [[filename, begin_offset ... end_offset, file_expected_size], ...].
-    def step piece_length
-        fragments = []
-        bytes_left = piece_length
-        while @current_file_index < @file_entries.length do
-            raise 'Assertion failed' unless bytes_left >= 0
-                # bytes_left being zero with files still remaining is the
-                # degenerate case of trailing empty file(s)
-            current_file_entry = @file_entries[@current_file_index]
-            filename = File::join(*current_file_entry['path'])
-            filesize = current_file_entry['length']
-            start_offset = @initial_skip
-            if start_offset + bytes_left > filesize then
-                end_offset = filesize
-                bytes_left -= filesize - start_offset
-                fragments.push [filename, start_offset ... end_offset, filesize]
-                # advance to next file
-                @current_file_index += 1
-                @initial_skip = 0
-            else
-                end_offset = start_offset + bytes_left
-                fragments.push [filename, start_offset ... end_offset, filesize]
-                @initial_skip += bytes_left
-                bytes_left = 0
-            end
-        end
-        return fragments
-    end
 end
 
 #### Parse command line
@@ -375,8 +345,9 @@ if torrent.info['md5sum'] then
 end
 
 if torrent.multifile? then
-    unless File::directory?($checkee || torrent.name) then
-        $stderr.puts "chktor: #{dirname.inspect}: no such directory"
+    dirname = $checkee || torrent.name
+    unless File::directory? dirname then
+        $stderr.puts "chktor: #{dirname}: no such directory"
         exit 1
     end
 end
@@ -393,7 +364,31 @@ class Torrent
 
         cursor = Multifile_Cursor::new file_array
         (0 ... @piece_count).each do |piece_index|
-            fragments = cursor.step @piece_length
+            fragments = [] # [[filename, begin_offset ... end_offset, file_expected_size], ...].
+            bytes_left = @piece_length
+            while cursor.current_file_index < cursor.file_entries.length do
+                raise 'Assertion failed' unless bytes_left >= 0
+                    # bytes_left being zero with files still remaining is the
+                    # degenerate case of trailing empty file(s)
+                current_file_entry = cursor.file_entries[cursor.current_file_index]
+                filename = File::join(*current_file_entry['path'])
+                filesize = current_file_entry['length']
+                start_offset = cursor.initial_skip
+                if start_offset + bytes_left > filesize then
+                    end_offset = filesize
+                    bytes_left -= filesize - start_offset
+                    fragments.push [filename, start_offset ... end_offset, filesize]
+                    # advance to next file
+                    cursor.current_file_index += 1
+                    cursor.initial_skip = 0
+                else
+                    end_offset = start_offset + bytes_left
+                    fragments.push [filename, start_offset ... end_offset, filesize]
+                    cursor.initial_skip += bytes_left
+                    bytes_left = 0
+                end
+            end
+
             yield fragments, piece_index
         end
         raise 'Assertion failed' unless cursor.current_file_index >= @cursor.file_entries.length
