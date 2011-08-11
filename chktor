@@ -382,22 +382,17 @@ end
 
 errors_detected = false
 
+if torrent.info['md5sum'] then
+    $stderr.puts "chktor: warning: ignoring .info.md5sum"
+end
+
 unless torrent.multifile? then
     # single file
-    filename = torrent.name
-    raise 'Type mismatch' unless filename.is_a? String
-    raise 'Type mismatch' unless torrent.length.is_a? Integer
-
-    if torrent.info['md5sum'] then
-        $stderr.puts "warning: ignoring MD5 checksum"
-    end
-
     # synthesise a file array of the single file
-    # note that the filename will be sanity-checked further below
-    file_array = [{'path' => [filename], 'length' => torrent.length}]
+    file_array = [{'path' => [torrent.name], 'length' => torrent.length}]
+    file_array.deep_freeze
 else
     # multiple files
-    raise 'Invalid base directory name' if dirname.include? ?/ or ['.', '..'].include? dirname
     file_array = torrent.files
 end
 
