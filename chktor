@@ -337,7 +337,9 @@ if torrent.multifile? then
 end
 
 class Torrent
-    def each_piece_file_fragments
+    # iterate over piece and yield [fragment, ...], piece_index for every piece.
+    # Each fragment is represented by a list of [filename, begin_offset ... end_offset, expected_filesize] tuples.
+    def each_piece_fragments
         unless multifile? then # single file
             # synthesise a file array of the single file
             file_list = [{'path' => [@name], 'length' => @length}]
@@ -349,7 +351,7 @@ class Torrent
         fileno = 0
         start_offset = 0 # next piece's start offset in the current file
         (0 ... @piece_count).each do |piece_index|
-            fragments = [] # [[filename, begin_offset ... end_offset, file_expected_size], ...].
+            fragments = [] # [[filename, begin_offset ... end_offset, expected_filesize], ...].
             bytes_left = @piece_length
             while fileno < file_list.length do
                 current_file_entry = file_list[fileno]
@@ -381,7 +383,7 @@ end
 
 valid_pieces = 0
 
-torrent.each_piece_file_fragments do |fragments, piece_index|
+torrent.each_piece_fragments do |fragments, piece_index|
     piece_content = ''
     acquisition_failed = false
     display_fragments = fragments.map do |filename, range, expected_file_size|
