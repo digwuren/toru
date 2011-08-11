@@ -302,16 +302,13 @@ end
 
 errors_detected = false
 
-piece_length = torrent.data['info']['piece length']
-raise 'Type mismatch' unless piece_length.is_a? Integer
-
 unless torrent.data['info']['files'] then
     # single file
     filename = torrent.data['info']['name']
     raise 'Type mismatch' unless filename.is_a? String
     full_length = torrent.data['info']['length']
     raise 'Type mismatch' unless full_length.is_a? Integer
-    expected_piece_count = (full_length + piece_length - 1) / piece_length
+    expected_piece_count = (full_length + torrent.piece_length - 1) / torrent.piece_length
     raise 'Piece count mismatch' unless torrent.pieces.length == (expected_piece_count * 20)
 
     if torrent.data['info']['md5sum'] then
@@ -338,7 +335,7 @@ file_array.each do |file_item|
 end
 puts "Full length: #{full_length}"
 
-expected_piece_count = (full_length + piece_length - 1) / piece_length
+expected_piece_count = (full_length + torrent.piece_length - 1) / torrent.piece_length
 raise 'Piece count mismatch' unless torrent.pieces.length == (expected_piece_count * 20)
 
 raise "Content directory #{dirname.inspect} missing" unless File::directory? dirname
@@ -349,7 +346,7 @@ cursor.initial_skip = 0
     expected_piece_hash, = torrent.pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
     piece_content = ''
     acquisition_failed = false
-    fragments = cursor.step piece_length
+    fragments = cursor.step torrent.piece_length
     display_fragments = fragments.map do |filename, range, expected_file_size|
         [range.begin != 0 ? "... " : "", filename, range.end != expected_file_size ? " ..." : ""].join ''
     end
