@@ -169,8 +169,8 @@ class Torrent
         end
 
         @files = @info['files']
-        unless @files.nil? or @files.is_a? Hash then
-            raise Invalid::new(".info.files exists but is not a dictionary")
+        unless @files.nil? or @files.is_a? Array then
+            raise Invalid::new(".info.files exists but is not a list")
         end
 
         return
