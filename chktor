@@ -269,22 +269,6 @@ def each_nondir_descendant dir, base_dir = '.', &thunk
     return
 end
 
-# Cursor for traversing over the file list piecewise
-class Multifile_Cursor
-    attr_reader :file_entries
-    attr_accessor :current_file_index
-    attr_accessor :initial_skip
-
-    # file_entries comes straight from a multifile torrent file
-    def initialize file_entries
-        super()
-        @file_entries = file_entries
-        @current_file_index = 0
-        @initial_skip = 0
-        return
-    end
-end
-
 #### Parse command line
 
 $quiet = false
@@ -356,42 +340,43 @@ class Torrent
     def each_piece_file_fragments
         unless multifile? then # single file
             # synthesise a file array of the single file
-            file_array = [{'path' => [@name], 'length' => @length}]
-            file_array.deep_freeze
+            file_list = [{'path' => [@name], 'length' => @length}]
+            file_list.deep_freeze
         else # multiple files
-            file_array = @files
+            file_list = @files
         end
 
-        cursor = Multifile_Cursor::new file_array
+        current_file_index = 0
+        initial_skip = 0
         (0 ... @piece_count).each do |piece_index|
             fragments = [] # [[filename, begin_offset ... end_offset, file_expected_size], ...].
             bytes_left = @piece_length
-            while cursor.current_file_index < cursor.file_entries.length do
+            while current_file_index < file_list.length do
                 raise 'Assertion failed' unless bytes_left >= 0
                     # bytes_left being zero with files still remaining is the
                     # degenerate case of trailing empty file(s)
-                current_file_entry = cursor.file_entries[cursor.current_file_index]
+                current_file_entry = file_list[current_file_index]
                 filename = File::join(*current_file_entry['path'])
                 filesize = current_file_entry['length']
-                start_offset = cursor.initial_skip
+                start_offset = initial_skip
                 if start_offset + bytes_left > filesize then
                     end_offset = filesize
                     bytes_left -= filesize - start_offset
                     fragments.push [filename, start_offset ... end_offset, filesize]
                     # advance to next file
-                    cursor.current_file_index += 1
-                    cursor.initial_skip = 0
+                    current_file_index += 1
+                    initial_skip = 0
                 else
                     end_offset = start_offset + bytes_left
                     fragments.push [filename, start_offset ... end_offset, filesize]
-                    cursor.initial_skip += bytes_left
+                    initial_skip += bytes_left
                     bytes_left = 0
                 end
             end
 
             yield fragments, piece_index
         end
-        raise 'Assertion failed' unless cursor.current_file_index >= @cursor.file_entries.length
+        raise 'Assertion failed' unless cursor.current_file_index >= file_list.length
         return
     end
 end
