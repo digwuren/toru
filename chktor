@@ -374,28 +374,41 @@ if torrent.info['md5sum'] then
     $stderr.puts "chktor: warning: ignoring .info.md5sum"
 end
 
-unless torrent.multifile? then
-    # single file
-    # synthesise a file array of the single file
-    file_array = [{'path' => [File::basename($checkee)], 'length' => torrent.length}]
-    dirname = File::dirname $checkee
-    file_array.deep_freeze
-else
-    # multiple files
-    file_array = torrent.files
-    dirname = $checkee
+class Torrent
+    def each_piece_file_fragments checkee = nil
+        checkee ||= @name
+
+        unless multifile? then
+            # single file
+            # synthesise a file array of the single file
+            file_array = [{'path' => [File::basename(checkee)], 'length' => @length}]
+            dirname = File::dirname checkee
+            file_array.deep_freeze
+        else
+            # multiple files
+            file_array = @files
+            dirname = checkee
+        end
+
+        cursor = Multifile_Cursor::new file_array
+        (0 ... @piece_count).each do |piece_index|
+            fragments = cursor.step @piece_length
+            yield dirname, fragments, piece_index
+        end
+        raise 'Assertion failed' unless cursor.eof?
+        return
+    end
 end
 
-unless File::directory? dirname then
-    raise "Content directory #{dirname.inspect} missing"
-end
-
-cursor = Multifile_Cursor::new file_array
 valid_pieces = 0
-(0 ... torrent.piece_count).each do |piece_index|
+
+torrent.each_piece_file_fragments $checkee do |dirname, fragments, piece_index|
+    unless File::directory? dirname then
+        $stderr.puts "chktor: #{dirname.inspect}: no such directory"
+        exit 1
+    end
     piece_content = ''
     acquisition_failed = false
-    fragments = cursor.step torrent.piece_length
     display_fragments = fragments.map do |filename, range, expected_file_size|
         [range.begin != 0 ? "... " : "", filename, range.end != expected_file_size ? " ..." : ""].join ''
     end
