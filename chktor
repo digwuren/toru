@@ -188,7 +188,7 @@ class Torrent
                 unless file_item['path'].is_a? Array then
                     raise Invalid::new(".info.files[#{i}].path is not a list")
                 end
-                unless file_item['path'].all?{|c| c.is_a? String and !c.include?(?/) and !['.', '..'].include?(c)} then
+                unless file_item['path'].all?{|c| valid_filename_component? c} then
                     raise Invalid::new(".info.files[#{i}].path is not a list of valid filename components")
                 end
 
@@ -207,6 +207,9 @@ class Torrent
         unless @name.is_a? String then
             raise Invalid::new(".info.name is not a string")
         end
+        unless valid_filename_component? s then
+            raise Invalid::new(".info.name is not a valid unqualified single-level filename")
+        end
 
         return
     end
@@ -221,6 +224,11 @@ class Torrent
         return
     end
     private :validate_length
+
+    def valid_filename_component? s
+        return s.is_a? String and !s.include?(?/) and !['.', '..'].include? s
+    end
+    private :valid_filename_component?
 
     def multifile?
         return !@files.nil?
