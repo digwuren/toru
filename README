@@ -1,0 +1,12 @@
+What is it?
+===========
+
+A few Ruby scripts to manipulate BitTorrent files:
+
+* chkdir verifies a download
+* rentor renames a torrent file in accordance with whatever's inside
+
+License
+=======
+
+GPL v3.
