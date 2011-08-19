@@ -1,0 +1,343 @@
+#! /usr/bin/ruby
+
+require 'getoptlong'
+require 'set'
+require 'digest/sha1'
+
+IDENTIFICATION = 'rentor 0.1'
+USAGE = <<"EOF"
+rentor -- rename a BitTorrent file naturally
+
+usage: rentor filename.torrent ...
+
+ --help             show this usage
+ --version          show version data
+
+EOF
+
+#### Bdecoding
+
+# Parse a bencoded string and return the object represented by it.
+def bdecode source
+    object, end_offset = bdecode_part source, 0
+    raise 'bdecode error' unless end_offset == source.length
+    return object
+end
+
+# Given a bencoded string and offset in it, parse the object starting at that
+# offset.  Return the parsed object and offset in the source string immediately
+# past the object's end.
+def bdecode_part source, offset
+    case source[offset]
+
+    when ?0 .. ?9 then # string
+        length = 0
+        while (?0 .. ?9).include? source[offset] do
+            length = length * 10 + source[offset] - ?0
+            offset += 1
+        end
+        raise 'bdecode error' unless source[offset] == ?:
+        offset += 1
+        content = source[offset ... offset + length]
+        raise 'bdecode error' unless content.length == length
+        return content, offset + length
+
+    when ?d then # dictionary
+        dictionary = {}
+        last_key = nil # we use this to check strictly ascending key order
+        offset += 1
+        until source[offset] == ?e do
+            key, offset = bdecode_part source, offset
+            raise 'bdecode error' unless key.is_a? String
+            raise 'bdecode error' if last_key and !(key > last_key)
+            value, offset = bdecode_part source, offset
+            dictionary[key] = value
+            last_key = key
+        end
+        offset += 1
+        return dictionary, offset
+
+    when ?l then # list
+        list = []
+        offset += 1
+        until source[offset] == ?e do
+            item, offset = bdecode_part source, offset
+            list.push item
+        end
+        offset += 1
+        return list, offset
+
+    when ?i then # integer
+        offset += 1
+        end_offset = source.index(?e, offset)
+        raise 'bdecode error' if end_offset.nil?
+        integer_face = source[offset ... end_offset]
+        # Going by the foundational principle that there's only one way to
+        # properly bencode an object, it's obvious that plus signs and extra
+        # lead zeroes are verboten in bencoded integers.
+        raise 'bdecode error' unless integer_face =~ /\A(0|-?[1-9]\d*)\Z/
+        value = integer_face.to_i
+        offset = end_offset + 1
+        return value, offset
+
+    else
+        raise "Unknown bdecode object marker #{source[offset].chr.inspect}"
+
+    end
+end
+
+#### Deep freeze
+
+class String
+    def deep_freeze
+        freeze
+        return self
+    end
+end
+
+class Array
+    def deep_freeze
+        each do |item|
+            item.deep_freeze
+        end
+        freeze
+        return self
+    end
+end
+
+class Integer
+    def deep_freeze
+        return self
+    end
+end
+
+class Hash
+    def deep_freeze
+        each_pair do |key, value|
+            key.deep_freeze
+            value.deep_freeze
+        end
+        freeze
+        return self
+    end
+end
+
+#### Encapsulated torrent object
+
+class Torrent
+    # the parsed torrent data structure; frozen
+    attr_reader :data
+
+    # the info dictionary
+    attr_reader :info
+
+    # the piece data; a string
+    attr_reader :pieces
+   
+    # piece length; an integer
+    attr_reader :piece_length
+
+    # file data; nil or a list of dictionaries
+    attr_reader :files
+
+    # root object name; a string
+    attr_reader :name
+
+    # total length of data in this torrent; a non-negative integer
+    attr_reader :length
+
+    # number of pieces; a non-negative integer
+    attr_reader :piece_count
+
+    def initialize bencoded_data
+        super()
+        @data = bdecode bencoded_data
+        @data.deep_freeze
+
+        # validate and extract some data
+        @info = @data['info']
+        unless @info.is_a? Hash then
+            raise Invalid::new(".info is not a dictionary")
+        end
+
+        @pieces = @info['pieces']
+        unless @pieces.is_a? String then
+            raise Invalid::new(".info.pieces is not a string")
+        end
+
+        @piece_length = @info['piece length']
+        unless @piece_length.is_a? Integer then
+            raise Invalid::new(".info.'piece length' is not an integer")
+        end
+        unless @piece_length > 0 then
+            raise Invalid::new(".info.'piece length' is not a positive integer")
+        end
+
+        @files = @info['files']
+        if @files then
+            unless @files.is_a? Array then
+                raise Invalid::new(".info.files exists but is not a list")
+            end
+
+            @length = 0
+            @files.each_with_index do |file_item, i|
+                unless file_item['path'].is_a? Array then
+                    raise Invalid::new(".info.files[#{i}].path is not a list")
+                end
+                unless file_item['path'].all?{|c| valid_filename_component? c} then
+                    raise Invalid::new(".info.files[#{i}].path is not a list of valid filename components")
+                end
+
+                validate_length file_item['length'], ".info.files[#{i}].length"
+                @length += file_item['length']
+            end
+            unless @info['length'].nil? then
+                raise Invalid::new(".info.files exists but .info.length exists, too")
+            end
+        else
+            validate_length @info['length'], ".info.length"
+            @length = @info['length']
+        end
+
+        @name = @info['name']
+        unless @name.is_a? String then
+            raise Invalid::new(".info.name is not a string")
+        end
+        unless valid_filename_component? @name then
+            raise Invalid::new(".info.name is not a valid unqualified single-level filename")
+        end
+
+        @piece_count = (@length + @piece_length - 1) / @piece_length # integer division
+        unless @pieces.length == @piece_count * 20 then
+            raise Invalid::new("total data size (#@piece_count pieces of #@piece_length bytes each) does not match the length of .info.pieces (#{@pieces.length})")
+        end
+
+        return
+    end
+
+    def validate_length value, address
+        unless value.is_a? Integer then
+            raise Invalid::new("#{address} is not an integer")
+        end
+        unless value >= 0 then
+            raise Invalid::new("#{address} is not a non-negative integer")
+        end
+        return
+    end
+    private :validate_length
+
+    def valid_filename_component? s
+        return s.is_a?(String) && !s.include?(?/) && !['.', '..'].include?(s)
+    end
+    private :valid_filename_component?
+
+    def multifile?
+        return !@files.nil?
+    end
+
+    # Get hash of the specified piece as a hex string.
+    def piece_hash piece_index
+        hash, = @pieces[piece_index * 20 ... (piece_index + 1) * 20].unpack 'H*'
+        return hash
+    end
+
+    class Invalid < Exception
+        def initialize message
+            super message
+            return
+        end
+    end
+end
+
+#### File system traversal
+
+# Iterate over all descendants of a given directory that are not directories.
+def each_nondir_descendant dir, base_dir = '.', &thunk
+    Dir::entries(File::join(base_dir, dir)).each do |entry|
+        next if ['.', '..'].include? entry
+        qentry = dir == '.' ? entry : File::join(dir, entry)
+        if File::directory? File::join(base_dir, qentry) then
+            each_nondir_descendant qentry, base_dir, &thunk
+        else
+            yield qentry
+        end
+    end
+    return
+end
+
+#### Parse command line
+
+$0 = 'rentor' # set our name for GetoptLong's error reporting
+
+begin
+    GetoptLong::new(
+        ['--help', '-h', GetoptLong::NO_ARGUMENT],
+        ['--version', '-V', GetoptLong::NO_ARGUMENT]
+    ).each do |opt, arg|
+        case opt
+        when '--help' then
+            puts USAGE
+            exit 0
+        when '--version' then
+            puts IDENTIFICATION
+            exit 0
+        end
+    end
+rescue GetoptLong::InvalidOption, GetoptLong::MissingArgument
+    # the error has already been reported by GetoptLong#each
+    exit 1
+end
+
+if ARGV.empty? then
+    puts USAGE
+    exit 0
+end
+
+errors = false
+
+ARGV.each do |oldname|
+    torrent = nil # declare
+    begin
+        torrent = Torrent::new IO::read(oldname)
+    rescue SystemCallError
+        $stderr.puts "rentor: #{oldname}: unable to load: #$!"
+        errors = true
+        next
+    rescue Torrent::Invalid
+        $stderr.puts "rentor: #{oldname}: #$!"
+        errors = true
+        next
+    end
+    natural_name = torrent.name + '.torrent'
+    if File::basename(oldname) == natural_name then
+        puts "#{oldname} already has the natural name"
+        # not an error
+        next
+    end
+    if File::dirname(oldname) == '.' then
+        newname = natural_name
+    else
+        newname = File::join(File::dirname(oldname), natural_name)
+    end
+    # XXX: Note the potential race condition between checking and renaming
+    if File::exists? newname then
+        $stderr.puts "!!! #{oldname} will not be renamed; #{newname} already exists"
+        errors = true
+        next
+    end
+    begin
+        File::rename oldname, newname
+        puts "#{oldname} => #{newname}"
+    rescue SystemCallError
+        $stderr.puts "rentor: #{oldname} => #{newname}: #$!"
+        errors = true
+        next
+    end
+end
+
+if errors then
+    $stderr.puts "Error(s) detected."
+    exit 1
+else
+    exit 0
+end
