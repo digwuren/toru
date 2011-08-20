@@ -330,7 +330,7 @@ if $torrent_dir then
     workdir = File::dirname $torrent_filename
     begin
         Dir::chdir workdir
-    rescue
+    rescue SystemCallError
         $stderr.puts "chktor: #{workdir}: chdir failed: #$!"
         exit 1
     end
@@ -414,7 +414,7 @@ torrent.each_piece_fragments do |fragments, piece_index|
         port = nil
         begin
             port = open(realfilename, 'rb')
-        rescue
+        rescue SystemCallError
             $stderr.puts "chktor: #{realfilename}: open failed: #$!"
             acquisition_failed = true
             errors_detected = true
