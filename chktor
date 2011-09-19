@@ -417,7 +417,8 @@ torrent.each_piece_fragments do |fragments, piece_index|
         [range.begin != 0 ? "... " : "", filename, range.end != expected_file_size ? " ..." : ""].join ''
     end
     set_title sprintf('%.1f%%', piece_index * 100.0 / torrent.piece_count) if $use_title
-    print "##{piece_index}/#{torrent.piece_count} (#{display_fragments.join ', '}) " unless $quiet
+    piece_description = "##{piece_index}/#{torrent.piece_count} (#{display_fragments.join ', '})"
+    print "#{piece_description} " unless $quiet
     $stdout.flush
     fragments.each do |filename, range, expected_file_size|
         if torrent.multifile? then
@@ -462,11 +463,13 @@ torrent.each_piece_fragments do |fragments, piece_index|
             end
             puts unless $quiet
         else
-            puts " HASH MISMATCH" unless $quiet
+            print "#{piece_description} " if $quiet
+            puts " HASH MISMATCH"
             errors_detected = true
         end
     else
-        puts " ACQUISITION FAILED" unless $quiet
+        print "#{piece_description} " if $quiet
+        puts " ACQUISITION FAILED"
         errors_detected = true
     end
 end
