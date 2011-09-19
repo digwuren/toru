@@ -8,11 +8,12 @@ IDENTIFICATION = 'chktor 0.1'
 USAGE = <<"EOF"
 chktor -- check whether a BitTorrent file matches a file or directory
 
-usage: chktor [-qd] [-xDIR] filename.torrent [checkee]
+usage: chktor [-qdt] [-xDIR] filename.torrent [checkee]
 
  -q, --quiet        check quietly
  -d, --torrent-dir  resolve checkee and implicit filename(s) starting from the
                     torrent file's directory rather than the current directory
+ -t, --title        indicate progress via the terminal window title
  -x, --extract=DIR  extract valid pieces into the given directory as
                     separate files (named by piece number)
 
@@ -271,11 +272,20 @@ def each_nondir_descendant dir, base_dir = '.', &thunk
     return
 end
 
+#### User interface
+
+def set_title msg
+    print "\e]0;#{msg}\a"
+    $stdout.flush
+    return
+end
+
 #### Parse command line
 
 $quiet = false
 $torrent_dir = false
 $extract_valid_pieces = nil # if true, holds the directory name
+$use_title = false
 
 $0 = 'chktor' # set our name for GetoptLong's error reporting
 
@@ -284,6 +294,7 @@ begin
         ['--quiet', '-q', GetoptLong::NO_ARGUMENT],
         ['--torrent-dir', '-d', GetoptLong::NO_ARGUMENT],
         ['--extract-valid-pieces', '-x', GetoptLong::REQUIRED_ARGUMENT],
+        ['--title', '-t', GetoptLong::NO_ARGUMENT],
         ['--help', '-h', GetoptLong::NO_ARGUMENT],
         ['--version', '-V', GetoptLong::NO_ARGUMENT]
     ).each do |opt, arg|
@@ -295,6 +306,8 @@ begin
         when '--extract' then
             raise "chktor: #{arg}: not a directory" unless File::directory? arg
             $extract_valid_pieces = arg
+        when '--title' then
+            $use_title = true
         when '--help' then
             puts USAGE
             exit 0
@@ -403,6 +416,7 @@ torrent.each_piece_fragments do |fragments, piece_index|
     display_fragments = fragments.map do |filename, range, expected_file_size|
         [range.begin != 0 ? "... " : "", filename, range.end != expected_file_size ? " ..." : ""].join ''
     end
+    set_title sprintf('%.1f%%', piece_index * 100.0 / torrent.piece_count) if $use_title
     print "##{piece_index}/#{torrent.piece_count} (#{display_fragments.join ', '}) " unless $quiet
     $stdout.flush
     fragments.each do |filename, range, expected_file_size|
@@ -456,6 +470,7 @@ torrent.each_piece_fragments do |fragments, piece_index|
         errors_detected = true
     end
 end
+set_title ''
 
 # Check for any extra files
 if torrent.multifile? then
@@ -469,7 +484,7 @@ end
 
 if errors_detected then
     # Note that it is possible for errors to be present even when all pieces
-    # are valid if some of the files has trailing junk.
+    # are valid if some of the files have trailing junk.
     puts "Error(s) detected, only #{valid_pieces} out of #{torrent.piece_count} pieces are valid."
     exit 1
 else
