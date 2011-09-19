@@ -454,7 +454,7 @@ torrent.each_piece_fragments do |fragments, piece_index|
     unless acquisition_failed then
         if Digest::SHA1.hexdigest(piece_content) == torrent.piece_hash(piece_index) then
             valid_pieces += 1
-            print " ok" unless $quiet
+            print " #{errors_detected ? 'piece ok' : 'ok so far'}" unless $quiet
             if $extract_valid_pieces then
                 open "#{File::join $extract_valid_pieces, piece_index.to_s}", 'wb' do |port|
                     port.write piece_content
