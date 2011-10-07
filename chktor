@@ -441,6 +441,7 @@ torrent.each_piece_fragments do |fragments, piece_index|
         end
         port.seek range.begin
         subpiece = port.read(range.end - range.begin)
+        subpiece ||= '' # if port.read has returned nil because of reading past end of file, replace it with empty string
         unless subpiece.length == range.end - range.begin then
             $stderr.puts "chktor: #{realfilename}: short read"
             acquisition_failed = true
