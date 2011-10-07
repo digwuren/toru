@@ -386,7 +386,7 @@ class Torrent
                 current_file_entry = file_list[fileno]
                 filename = File::join(*current_file_entry['path'])
                 filesize = current_file_entry['length']
-                if start_offset + bytes_left > filesize then
+                if bytes_left >= filesize - start_offset then
                     bytes_left -= filesize - start_offset
                     fragments.push [filename, start_offset ... filesize, filesize]
                     # advance to next file
@@ -396,9 +396,7 @@ class Torrent
                     fragments.push [filename, start_offset ... start_offset + bytes_left, filesize]
                     start_offset += bytes_left
                     bytes_left = 0
-                    break if start_offset < filesize
-                        # if start_offset == filesize, we may be able to fit a
-                        # few empty files into this piece and so shouldn't break.
+                    break
                 end
             end
             yield fragments, piece_index
