@@ -8,9 +8,10 @@ IDENTIFICATION = 'chktor 0.1'
 USAGE = <<"EOF"
 chktor -- check whether a BitTorrent file matches a file or directory
 
-usage: chktor [-qdT] [-xDIR] filename.torrent [checkee]
+usage: chktor [-qfdT] [-xDIR] filename.torrent [checkee]
 
  -q, --quiet        check quietly
+ -f, --fail-fast    exit with failure after encountering the first error
  -d, --torrent-dir  resolve checkee and implicit filename(s) starting from the
                     torrent file's directory rather than the current directory
  -T, --title        indicate progress via the terminal window title
@@ -283,6 +284,7 @@ end
 #### Parse command line
 
 $quiet = false
+$fail_fast = false
 $torrent_dir = false
 $extract_valid_pieces = nil # if true, holds the directory name
 $use_title = false
@@ -292,6 +294,7 @@ $0 = 'chktor' # set our name for GetoptLong's error reporting
 begin
     GetoptLong::new(
         ['--quiet', '-q', GetoptLong::NO_ARGUMENT],
+        ['--fail-fast', '-f', GetoptLong::NO_ARGUMENT],
         ['--torrent-dir', '-d', GetoptLong::NO_ARGUMENT],
         ['--extract-valid-pieces', '-x', GetoptLong::REQUIRED_ARGUMENT],
         ['--title', '-T', GetoptLong::NO_ARGUMENT],
@@ -301,6 +304,8 @@ begin
         case opt
         when '--quiet' then
             $quiet = true
+        when '--fail-fast' then
+            $fail_fast = true
         when '--torrent-dir' then
             $torrent_dir = true
         when '--extract' then
@@ -429,6 +434,10 @@ torrent.each_piece_fragments do |fragments, piece_index|
             port = open(realfilename, 'rb')
         rescue SystemCallError
             $stderr.puts "chktor: #{realfilename}: open failed: #$!"
+            if $fail_fast then
+                $stderr.puts "chktor: --fail-fast in effect, aborting"
+                exit 1
+            end
             acquisition_failed = true
             errors_detected = true
             # we'll continue anyway so as to be able to determine the presence of following files in this fragment
@@ -436,6 +445,10 @@ torrent.each_piece_fragments do |fragments, piece_index|
         end
         if port.stat.size != expected_file_size then
             $stderr.puts "chktor: #{realfilename}: size mismatch: expected #{expected_file_size}, actual #{port.stat.size}"
+            if $fail_fast then
+                $stderr.puts "chktor: --fail-fast in effect, aborting"
+                exit 1
+            end
             errors_detected = true
             # but we're not ceasing acquisition of this piece
         end
@@ -444,6 +457,10 @@ torrent.each_piece_fragments do |fragments, piece_index|
         subpiece ||= '' # if port.read has returned nil because of reading past end of file, replace it with empty string
         unless subpiece.length == range.end - range.begin then
             $stderr.puts "chktor: #{realfilename}: short read"
+            if $fail_fast then
+                $stderr.puts "chktor: --fail-fast in effect, aborting"
+                exit 1
+            end
             acquisition_failed = true
             errors_detected = true
         end
@@ -464,6 +481,10 @@ torrent.each_piece_fragments do |fragments, piece_index|
         else
             print "#{piece_description} " if $quiet
             puts " HASH MISMATCH"
+            if $fail_fast then
+                $stderr.puts "chktor: --fail-fast in effect, aborting"
+                exit 1
+            end
             errors_detected = true
         end
     else
