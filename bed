@@ -1,0 +1,608 @@
+#! /usr/bin/ruby
+
+require 'fcntl'
+require 'getoptlong'
+require 'set'
+require 'time'
+
+IDENTIFICATION = 'bed 0.1'
+USAGE = <<"EOF"
+bed -- BEncoded Database tool
+
+usage: bed filename.torrent -e selector [mutation]
+
+-e, --select=SELECTOR  select this item
+-i, --integer=INTEGER  set an integer value
+-s, --string=STRING    set a string value
+-d, --create-dict      create dictionary
+-l, --create-list      create list
+-r, --remove           remove the selected node(s)
+
+-o, --output=filename  write output to this file
+-j, --json             use JSON for output
+-a, --atom             list the output as a plain atom.  Error if the
+                       selectee is not an atom.  Useful in scripts.
+-t, --time             interpret this integer as a Unix timestamp
+
+    --help             show this usage
+    --version          show version data
+
+EOF
+
+#### Bdecoding
+
+# Parse a bencoded string and return the object represented by it.
+def bdecode source
+  object, end_offset = bdecode_part source, 0
+  raise 'bdecode error' unless end_offset == source.length
+  return object
+end
+
+# Given a bencoded string and offset in it, parse the object starting
+# at that offset.  Return the parsed object and offset in the source
+# string immediately past the object's end.
+def bdecode_part source, offset
+  case source[offset]
+
+  when ?0 .. ?9 then # string
+    length = 0
+    while (?0 .. ?9).include? source[offset] do
+      length = length * 10 + source[offset] - ?0
+      offset += 1
+    end
+    raise 'bdecode error' unless source[offset] == ?:
+    offset += 1
+    content = source[offset ... offset + length]
+    raise 'bdecode error' unless content.length == length
+    return content, offset + length
+
+  when ?d then # dictionary
+    dictionary = {}
+    last_key = nil # we use this to check strictly ascending key order
+    offset += 1
+    until source[offset] == ?e do
+      key, offset = bdecode_part source, offset
+      raise 'bdecode error' unless key.is_a? String
+      raise 'bdecode error' if last_key and !(key > last_key)
+      value, offset = bdecode_part source, offset
+      dictionary[key] = value
+      last_key = key
+    end
+    offset += 1
+    return dictionary, offset
+
+  when ?l then # list
+    list = []
+    offset += 1
+    until source[offset] == ?e do
+      item, offset = bdecode_part source, offset
+      list.push item
+    end
+    offset += 1
+    return list, offset
+
+  when ?i then # integer
+    offset += 1
+    end_offset = source.index(?e, offset)
+    raise 'bdecode error' if end_offset.nil?
+    integer_face = source[offset ... end_offset]
+    # Going by the foundational principle that there's only one way to
+    # properly bencode an object, it's obvious that plus signs and
+    # extra lead zeroes are verboten in bencoded integers.
+    raise 'bdecode error' unless integer_face =~ /\A(0|-?[1-9]\d*)\Z/
+    value = integer_face.to_i
+    offset = end_offset + 1
+    return value, offset
+
+  else
+    raise "Unknown bdecode object marker " +
+        "#{source[offset].chr.inspect}"
+
+  end
+end
+
+#### Bencoding
+
+class Hash
+  def bencode_to port
+    port.write 'd'
+    self.keys.sort.each do |key|
+      key.bencode_to port
+      self[key].bencode_to port
+    end
+    port.write 'e'
+    return
+  end
+end
+
+class Array
+  def bencode_to port
+    port.write 'l'
+    self.each do |item|
+      item.bencode_to port
+    end
+    port.write 'e'
+    return
+  end
+end
+
+class String
+  def bencode_to port
+    port.write self.length
+    port.write ':'
+    port.write self
+    return
+  end
+end
+
+class Integer
+  def bencode_to port
+    port.write 'i'
+    port.write self
+    port.write 'e'
+    return
+  end
+end
+
+#### JSON notation
+
+class Hash
+  def jsonify_to port
+    port.write '{'
+    firstp = true
+    self.keys.sort.each do |key|
+      port.write ', ' unless firstp
+      key.jsonify_to port
+      port.write ': '
+      self[key].jsonify_to port
+      firstp = false
+    end
+    port.write '}'
+    return
+  end
+end
+
+class Array
+  def jsonify_to port
+    port.write '['
+    firstp = true
+    self.each do |item|
+      port.write ', ' unless firstp
+      item.jsonify_to port
+      firstp = false
+    end
+    port.write ']'
+    return
+  end
+end
+
+class Integer
+  def jsonify_to port
+    port.print self
+    return
+  end
+end
+
+class String
+  def jsonify_to port
+    # Note that strings not conforming to UTF-8 can not be represented
+    # as JSON objects.
+    port.write '"'
+    self.unpack('U*').each do |unicode|
+      case unicode
+      when 0x0022, 0x005C then
+        port.write '\\' + unicode.chr
+      when 0x0020 .. 0x007E then
+        port.write unicode.chr
+      when 0x0008 then port.write '\b'
+      when 0x000C then port.write '\f'
+      when 0x000A then port.write '\n'
+      when 0x000D then port.write '\r'
+      when 0x0009 then port.write '\t'
+      else port.printf '\u%04X', unicode
+      end
+    end
+    port.write '"'
+    return
+  end
+end
+
+#### Prettyprint
+
+class Hash
+  def prettyprint indent
+    puts "dict"
+    keys.sort.each do |k|
+      print "  " * (indent + 1) + "#{k.inspect}: "
+      self[k].prettyprint indent + 1
+    end
+    return
+  end
+end
+
+class Array
+  def prettyprint indent
+    puts "list"
+    each_with_index do |v, k|
+      print "  " * (indent + 1) + "#{k.inspect}: "
+      v.prettyprint indent + 1
+    end
+    return
+  end
+end
+
+class String
+  def prettyprint indent
+    if length > 50 then
+      puts self[0 ... 50].inspect + "..."
+    else
+      puts self.inspect
+    end
+    return
+  end
+end
+
+class Integer
+  def prettyprint indent
+    puts self.inspect
+    return
+  end
+end
+
+#### Selectors
+
+class Selector
+  def initialize s
+    raise 'Type mismatch' unless s.is_a? String
+    super()
+    @steps = []
+    i = 0
+    while i < s.length do
+      while i < s.length and " \t\n\f".include? s[i] do
+        i += 1
+      end
+      head = i
+      while i < s.length and !" \t\n\f".include? s[i] do
+        i += 1
+      end
+      @steps.push s[head ... i] unless head == i
+    end
+    return
+  end
+
+  def null?
+    return @steps.empty?
+  end
+
+  def select_from data
+    @steps.each_with_index do |step, i|
+      data = data.select_by step
+      if data.nil? then
+        $stderr.puts "#$0: $input_filename: " +
+            "selector step #{i + 1} failure"
+        exit 1
+      end
+    end
+    return data
+  end
+
+  def set_value data, new_value
+    raise "set_value can't be called on a null selector" if null?
+    (0 .. @steps.length - 2).each do |i|
+      data = data.select_by @steps[i]
+      if data.nil? then
+        $stderr.puts "#$0: $input_filename: " +
+            "selector step #{i + 1} ""failure"
+        exit 1
+      end
+    end
+    data.set_by @steps.last, new_value
+    return
+  end
+
+  def delete_value data
+    raise "delete_value can't be called on a null selector" if @null?
+    (0 .. @steps.length - 2).each do |i|
+      data = data.select_by @steps[i]
+      if data.nil? then
+        $stderr.puts "#$0: $input_filename: " +
+            "selector step #{i + 1} failure"
+        exit 1
+      end
+    end
+    data.delete_by @steps.last
+    return
+  end
+end
+
+class Hash
+  def select_by step
+    return self[step]
+  end
+
+  def set_by step, new_value
+    self[step] = new_value
+    return
+  end
+
+  def delete_by step
+    self.delete step do
+      $stderr.puts "#$0: $input_filename: final selector step failure"
+      exit 1
+    end
+    return
+  end
+end
+
+class Array
+  def select_by step
+    case step
+    when 'first' then return self.first
+    when 'last' then return self.last
+    when /\A[+-]?\d+\Z/ then
+      i = step.to_i
+      if i < 0 then
+        return nil
+      end
+      return self[i]
+    else return nil
+    end
+  end
+
+  def set_by step, new_value
+    case step
+    when 'first' then
+      self[0] = new_value
+    when 'last' then
+      if self.empty? then
+        self[0] = new_value
+      else
+        self[-1] = new_value
+      end
+    when /\A[+-]?\d+\Z/ then
+      i = step.to_i
+      if i < 0 or i >= self.length then
+        $stderr.puts "#$0: $input_filename: invalid final selector"
+        exit 1
+      end
+      self[i] = new_value
+    else
+      if i < 0 or i >= self.length then
+        $stderr.puts "#$0: $input_filename: invalid final selector"
+        exit 1
+      end
+    end
+    return
+  end
+end
+
+class String
+  def select_by step
+    return nil
+  end
+
+  def set_by step, new_value
+    $stderr.puts "#$0: $input_filename: invalid final selector"
+    exit 1
+  end
+
+  def delete_by step
+    self.delete step do
+      $stderr.puts "#$0: $input_filename: final selector step failure"
+      exit 1
+    end
+    return
+  end
+end
+
+class Integer
+  def select_by step
+    return nil
+  end
+
+  def set_by step, new_value
+    $stderr.puts "#$0: $input_filename: invalid final selector"
+    exit 1
+  end
+
+  def delete_by step
+    self.delete step do
+      $stderr.puts "#$0: $input_filename: final selector step failure"
+      exit 1
+    end
+    return
+  end
+end
+
+#### Mutators
+
+class Mutator
+  class Set < Mutator
+    attr_reader :new_value
+
+    def initialize new_value
+      super()
+      @new_value = new_value
+      return
+    end
+  end
+
+  class Delete < Mutator
+  end
+end
+
+#### Parse command line
+
+$0 = 'bed' # set our name for GetoptLong's error reporting
+
+# In general, we'll create a Mutator instance while parsing the
+# command line, and store it in $mutator.  However, because we do not
+# need whether to parse the argument for --integer as an integer or a
+# timestamp before we'll have gone through the whole command line and
+# checked for all the places a --time may occur, the argument of
+# --integer is, instead, stored in $set_integer unparsed.  Only one of
+# $mutator and $set_integer can be non-nil at once.
+$mutator = nil
+$set_integer = nil
+
+$output_filename = nil
+$output_mode = :default
+$selector = Selector::new('') # null selector
+
+begin
+  GetoptLong::new(
+    ['--select', '-e', GetoptLong::REQUIRED_ARGUMENT],
+    ['--integer', '-i', GetoptLong::REQUIRED_ARGUMENT],
+    ['--string', '-s', GetoptLong::REQUIRED_ARGUMENT],
+    ['--create-dict', '-d', GetoptLong::NO_ARGUMENT],
+    ['--create-list', '-l', GetoptLong::NO_ARGUMENT],
+    ['--remove', '-r', GetoptLong::NO_ARGUMENT],
+    ['--output', '-o', GetoptLong::REQUIRED_ARGUMENT],
+    ['--json', '-j', GetoptLong::NO_ARGUMENT],
+    ['--atom', '-a', GetoptLong::NO_ARGUMENT],
+    ['--time', '-t', GetoptLong::NO_ARGUMENT],
+    ['--help', '-h', GetoptLong::NO_ARGUMENT],
+    ['--version', '-V', GetoptLong::NO_ARGUMENT]
+  ).each do |opt, arg|
+    case opt
+    when '--integer' then
+      $set_integer = arg
+      $mutator = nil
+    when '--select' then
+      $selector = Selector::new(arg)
+    when '--string' then
+      $mutator = Mutator::Set::new(arg)
+      $set_integer = nil
+    when '--create-dict' then
+      $mutator = Mutator::Set::new({})
+      $set_integer = nil
+    when '--create-list' then
+      $mutator = Mutator::Set::new([])
+      $set_integer = nil
+    when '--remove' then
+      $mutator = Mutator::Delete::new
+      $set_integer = nil
+    when '--output' then $output_filename = nil
+    when '--json' then $output_mode = :json
+    when '--atom' then $output_mode = :atom
+    when '--time' then $time = true
+    when '--help' then
+      puts USAGE
+      exit 0
+    when '--version' then
+      puts IDENTIFICATION
+      exit 0
+    end
+  end
+rescue GetoptLong::InvalidOption, GetoptLong::MissingArgument
+  # the error has already been reported by GetoptLong#each
+  exit 1
+end
+
+if $set_integer then
+  unless $time then
+    unless $set_integer =~ /\A[+-]?\d+\Z/ then
+      $stderr.puts "#$0: #{$set_integer}: not an integer"
+      exit 1
+    end
+    $mutator = Mutator::Set::new($set_integer.to_i)
+  else
+    $mutator = Mutator::Set::new(Time::parse($set_integer).to_i)
+  end
+  $set_integer = nil
+end
+
+if $mutator and $output_mode != :default then
+  $stderr.puts "#$0: --json or --atom can only be used " +
+      "without mutators"
+  exit 1
+end
+
+if ARGV.empty? then
+  $stderr.puts "#$0: missing filename"
+  exit 1
+end
+
+$input_filename = ARGV[0]
+
+unless ARGV.length == 1 then
+  $stderr.puts "#$0: argument count mismatch"
+  exit 1
+end
+
+# load input data
+
+data = nil # declare
+begin
+  data = bdecode IO::read($input_filename)
+rescue Errno::ENOENT
+  if $selector.null? and $mutator.is_a? Mutator::Set then
+    data = nil
+  else
+    raise
+  end
+rescue Errno
+  $stderr.puts "#$0: #$input_filename: #$!"
+  exit 1
+end
+
+if $mutator.nil? then
+  data = $selector.select_from(data)
+  case $output_mode
+  when :default then
+    data.prettyprint 0
+  when :json then
+    data.jsonify_to $stdout
+    puts
+  when :atom then
+    case data
+    when String then
+      print data
+      # note the lack of trailing newline
+    when Integer then
+      if $time then
+        print Time::at(data).utc.strftime('%Y-%m-%dT%H:%M:%S')
+      else
+        print data
+      end
+    else
+      $stderr.puts "#$0: the selected node is not an atom"
+      exit 1
+    end
+  else
+    raise 'Assertion failed: unknown $output_mode'
+  end
+else
+  # apply mutation
+  case $mutator
+  when Mutator::Set then
+    if $selector.null? then
+      data = $mutator.new_value
+    else
+      $selector.set_value data, $mutator.new_value
+    end
+  when Mutator::Delete then
+    if $selector.null? then
+      File::unlink $input_filename
+    else
+      $selector.delete_value data
+    end
+  else
+    raise 'Assertion failed: unknown $mutator'
+  end
+  # write mutated data back
+  filename = nil
+  counter = 1
+  begin
+    filename = File::join File::dirname($input_filename),
+        ".#{File::basename $input_filename}##{counter}"
+    port = open filename,
+        Fcntl::O_WRONLY | Fcntl::O_CREAT | Fcntl::O_EXCL
+    data.bencode_to port
+    port.close
+  rescue Errno::EEXIST
+    counter += 1
+    retry
+  end
+  File::rename filename, $input_filename
+end
